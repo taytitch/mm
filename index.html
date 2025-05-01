@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8" />
+  <title>Daily Number Game</title>
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-database-compat.js"></script>
+  <style>
+    body { font-family: Arial, sans-serif; max-width: 600px; margin: auto; padding: 20px; }
+    input, button { padding: 10px; margin-top: 10px; width: 100%; }
+    table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+    th, td { border: 1px solid #ccc; padding: 8px; text-align: center; }
+  </style>
+</head>
+<body>
+
+<h2>Daily Number Game</h2>
+
+<div id="nameSection">
+  <input id="nameInput" placeholder="กรอกชื่อเล่นของคุณ" />
+  <button onclick="saveName()">เริ่มเล่น</button>
+</div>
+
+<div id="gameSection" style="display:none">
+  <p>ยินดีต้อนรับ <b id="playerName"></b></p>
+  <input type="number" id="scoreInput" min="1" max="6" placeholder="กรอกเลขวันนี้ (1–6)" />
+  <button onclick="submitScore()">ส่งหมายเลข</button>
+  <p id="statusMsg"></p>
+
+  <h3>อันดับผู้เล่น</h3>
+  <table>
+    <thead><tr><th>ชื่อ</th><th>คะแนนสะสม</th><th>จำนวนครั้ง</th></tr></thead>
+    <tbody id="ranking"></tbody>
+  </table>
+</div>
+
+<script>
+  // ใส่ Firebase Config ของคุณเองตรงนี้
+  const firebaseConfig = {
+    apiKey: "YOUR_API_KEY",
+    authDomain: "YOUR_PROJECT.firebaseapp.com",
+    databaseURL: "https://YOUR_PROJECT.firebaseio.com",
+    projectId: "YOUR_PROJECT_ID",
+    storageBucket: "YOUR_PROJECT.appspot.com",
+    messagingSenderId: "YOUR_SENDER_ID",
+    appId: "YOUR_APP_ID"
+  };
+
+  firebase.initializeApp(firebaseConfig);
+  const db = firebase.database();
+
+  const today = new Date().toISOString().split("T")[0];
+  let username = localStorage.getItem("username");
+
+  if (username) showGame();
+
+  function saveName() {
+    const name = document.getElementById("nameInput").value.trim();
+    if (name) {
+      localStorage.setItem("username", name);
+      username = name;
+      showGame();
+    }
+  }
+
+  function showGame() {
+    document.getElementById("nameSection").style.display = "none";
+    document.getElementById("gameSection").style.display = "block";
+    document.getElementById("playerName").textContent = username;
+    loadScores();
+  }
+
+  function submitScore() {
+    const num = parseInt(document.getElementById("scoreInput").value);
+    if (!num || num < 1 || num > 6) return alert("กรุณากรอกเลขระหว่าง 1–6");
+
+    const userRef = db.ref(`players/${username}`);
+    userRef.once("value", snapshot => {
+      const data = snapshot.val() || {};
+      const history = data.history || {};
+      const firstDate = data.startDate || today;
+
+      if (history[today]) {
+        document.getElementById("statusMsg").innerText = "คุณกรอกเลขวันนี้แล้ว";
+        return;
+      }
+
+      // หากครบ 14 วัน ตั้งค่ารอบใหม่
+      const daysPassed = Math.floor((new Date(today) - new Date(firstDate)) / (1000 * 60 * 60 * 24));
+      if (daysPassed >= 14) {
+        userRef.set({
+          startDate: today,
+          history: {
+            [today]: num
+          }
+        });
+      } else {
+        history[today] = num;
+        userRef.set({
+          startDate: firstDate,
+          history: history
+        });
+      }
+
+      document.getElementById("statusMsg").innerText = "ส่งเลขเรียบร้อยแล้ว";
+      loadScores();
+    });
+  }
+
+  function loadScores() {
+    db.ref("players").once("value", snapshot => {
+      const data = snapshot.val() || {};
+      let scores = [];
+
+      for (const name in data) {
+        const history = data[name].history || {};
+        const total = Object.values(history).reduce((sum, val) => sum + val, 0);
+        scores.push({ name, total, count: Object.keys(history).length });
+      }
+
+      scores.sort((a, b) => b.total - a.total);
+
+      document.getElementById("ranking").innerHTML = scores.map(s =>
+        `<tr><td>${s.name}</td><td>${s.total}</td><td>${s.count}</td></tr>`
+      ).join("");
+    });
+  }
+</script>
+</body>
+</html>
